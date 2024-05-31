@@ -1,0 +1,1 @@
+/etc/acpi/brightness.sh /etc/acpi/brightness.sh
