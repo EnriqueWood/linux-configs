@@ -1,0 +1,1258 @@
+#!/bin/bash
+#
+#    mb-jgtools: Menu, Sidepanels, Screenshot Tool and Exit Dialog for Mabox
+#    Copyright (C) 2019-2024  Daniel Napora  <napcok@gmail.com>
+
+
+on_exit(){
+  MSG=$(xdotool getmouselocation --shell)
+  notify-send.sh "Position" "${MSG}"
+}
+
+. $HOME/.config/mabox/mabox.conf
+jgmenu_theme=${jgmenu_theme:-obtheme}
+menu_font_size=${menu_font_size:-9}
+menu_font_family=${menu_font_family:-Noto Sans Medium}
+jgmenu_font="${menu_font_family} ${menu_font_size}"
+
+# TEMPORARY
+[[ -v menu_sep_font_family ]] && : || mb-setvar "menu_sep_font_family='Noto Sans Bold'"
+[[ -v menu_sep_font_size ]] && : || mb-setvar menu_sep_font_size=10
+[[ -v item_height_factor ]] && : || mb-setvar item_height_factor=200
+[[ -v arrow_string ]] && : || mb-setvar "arrow_string=''"
+[[ -v arrow_string_left ]] && : || mb-setvar "arrow_string_left=''"
+#menu title/sep font
+menu_sep_font_size=${menu_sep_font_size:-10}
+menu_sep_font_family=${menu_sep_font_family:-Noto Sans Bold}
+menu_sep_font="${menu_sep_font_family} ${menu_sep_font_size}"
+item_height_factor=${item_height_factor:-200}
+
+[ $(pidof picom) ] && MENU_RADIUS=$jgtools_radius
+[ -z $jgmenu_use_borders ] && menu_border=0
+
+
+gtkbookmarks() {
+if [ $places_bookmarks == true ]; then
+    BOOKMARKS="$HOME/.config/gtk-3.0/bookmarks"
+    if [[ -s "$BOOKMARKS" ]]; then
+    case $LANG in
+        pl*) GTK_BOOKMARKS="Zakładki";;
+        es*) GTK_BOOKMARKS="Marcadores" ;;
+        de*) GTK_BOOKMARKS="Lesezeichen" ;;
+        *) GTK_BOOKMARKS="Bookmarks" ;;
+    esac
+        while read -r line
+        do
+        case $line in
+        file*)
+        uri=$(echo $line | cut -b 8- | cut -d' ' -f1 | sed 's/%20/ /g')
+        dirs+=(" ${line#* },^pipe(jgbrowser \"${uri}\")")
+        ;;
+        sftp*)
+        uri=$(echo $line | cut -d' ' -f1 | sed 's/%20/ /g')
+        label=$(echo $line | cut -d' ' -f2 | sed 's/%20/ /g')
+        dirs+=("󰡰  ${label}, pcmanfm -n ${uri}")
+        ;;
+        smb*)
+        uri=$(echo $line | cut -d' ' -f1 | sed 's/%20/ /g')
+        label=$(echo $line | cut -d' ' -f2 | sed 's/%20/ /g')
+        dirs+=("󰡰  ${label}, pcmanfm -n ${uri}")
+        ;;
+        esac
+        done <"$BOOKMARKS"
+    printf "%b\n" "^sep($GTK_BOOKMARKS)"
+    printf '%s\n' "${dirs[@]}"
+    fi
+else
+printf ""
+fi
+}
+
+WEBBROWSER="exo-open --launch WebBrowser"
+
+OSNAME=$(lsb_release -d | awk '{print $2}')
+OSVERSION=$(lsb_release -r | awk '{print $2}')
+#OSCODE=$(lsb_release -c | awk '{print $2}')
+OSCODE=$(grep CODENAME /etc/lsb-release |cut -d '=' -f2)
+
+mkconfigfile() {
+cat <<EOF > ${CONFIG_FILE}
+position_mode		= ${POSITION_MODE:-fixed}
+csv_cmd             = apps
+stay_alive			= 0
+hide_back_items		= ${HIDE_BACK_ITEMS:-0}
+terminal_exec 		= terminator
+terminal_args 		= -e
+tabs 				= ${TABS:-220}
+menu_border			= ${jgtools_border:-0}
+
+# MENU MARGIN
+menu_margin_x 		= ${menu_margin_x:-0}
+menu_margin_y 		= ${MENU_MARGIN_Y:-0}
+sub_spacing			= ${submenu_spacing:-0}
+
+menu_width 			= ${JGWIDTH:-40}
+menu_height_min 	= ${MENU_HEIGHT_MIN:-0}
+menu_height_max		= ${MENU_HEIGHT_MAX:-0}
+menu_padding_top 	= ${MENU_PADDING_TOP:-70}
+menu_padding_right 	= ${jgtools_padding:-0}
+menu_padding_bottom = ${jgtools_padding:-0}
+menu_padding_left	= ${jgtools_padding:-0}
+menu_radius 		= ${MENU_RADIUS:-0}
+menu_valign 		= ${MENU_VALIGN:-top}
+menu_halign 		= ${MENU_HALIGN:-left}
+
+item_height 		= $((menu_font_size*item_height_factor/100))
+item_halign 		= ${ITEM_HALIGN:-left}
+item_padding_x		= 4
+
+item_margin_x		= ${item_margin_x:-0}
+item_margin_y		= ${item_margin_y:-1}
+item_radius			= ${item_radius:-2}
+item_border			= ${item_border:-0}
+arrow_string		= ${arrow_string:-}
+
+columns				= ${COLUMNS:-1}
+menu_gradient_pos	= ${menu_gradient_pos:-none}
+color_menu_bg		= ${color_menu_bg:-#222222 80}
+color_menu_bg_to	= ${color_menu_bg_to:- #000000 100}
+color_menu_border 	= ${color_menu_border:-#2f9b85 100}
+color_norm_bg		= ${color_norm_bg:-#000000 0}
+color_norm_fg 		= ${color_norm_fg:-#CCCCCC 100}
+color_sel_bg 		= ${color_sel_bg:-#169f6f 60}
+color_sel_fg 		= ${color_sel_fg:-#f8f8f8 100}
+color_sel_border 	= ${color_sel_border:-#504e65 100}
+color_sep_fg 		= ${color_sep_fg:-#4D4D4D 100}
+color_sep_bg 		= ${color_sep_bg:-#169f6f 100}
+color_title_fg		= ${color_title_fg:-#4D4D4D 100}
+color_title_border	= ${color_title_border:-#169f6f 100}
+color_title_bg		= ${color_title_bg:-#169f6f 100}
+color_scroll_ind 	= ${color_scroll_ind:-#504e65 100}
+
+sep_markup 			= font='${menu_sep_font:-${jgmenu_font}}'
+sep_halign          = ${sep_halign:-center}
+sep_height			= ${sep_height:-5}
+font 				= ${jgmenu_font:-Noto Sans Medium 9}
+
+icon_size           = $((icons*menu_font_size*item_height_factor/100))
+icon_norm_alpha     = 70
+icon_sel_alpha      = 100
+
+icon_text_spacing   = $((iconmargin+8))
+icon_theme			= ${jgmenu_icon_theme:-Numix-Square}
+EOF
+
+case $jgmenu_theme in
+    default) 
+    ;;
+    obtheme) 
+        ob_file=$HOME/.config/openbox/rc.xml
+        [[ -f $ob_file ]] && wm_theme=$(awk '/<theme>/ {while (getline n) {if (match(n, /<name>/)){l=n; exit}}} END {split(l, a, "[<>]"); print a[3]}' "$ob_file")
+        if [ ! -f "$HOME/.config/mabox/jgobthemes/${wm_theme// /_}.colorrc" ]; then
+        obtheme2jgmenu
+        fi
+cat "$HOME/.config/mabox/jgobthemes/${wm_theme// /_}.colorrc" >> $CONFIG_FILE
+    ;;
+    *) 
+cat  "$HOME/.config/mabox/jgobthemes/${jgmenu_theme}.colorrc" >> $CONFIG_FILE
+    ;;
+esac
+
+}
+
+#MENU GŁÓWNE
+main() {
+mb-setvar jgtools_last="\"main ipc\""
+
+CONFIG_FILE=$(mktemp)
+trap "rm -f ${CONFIG_FILE}" EXIT
+
+POSITION_MODE=${1:-pointer}
+HIDE_BACK_ITEMS=1
+
+panels_topmargin=0
+case $LANG in
+    pl*) TYPE_TO_SEARCH="Pisz aby Wyszukać"
+    APPS="Programy"
+    KEYS="Skróty klawiszowe"
+    SCREENSHOT="Zrzut ekranu"
+    LOCKSCR="Zablokuj ekran"
+    EXIT="Wyjście..."
+    HELP="Pomoc"
+    UGUIDE="Przewodnik Mabox (online)"
+    SETTINGS="ustawienia"
+    ;;
+    es*) TYPE_TO_SEARCH="Buscar"
+    APPS="Aplicationes"
+    KEYS="Atajos del teclado"
+    SCREENSHOT="Capturar Pantalla"
+    LOCKSCR="Bloquear pantalla"
+    EXIT="Salir..."
+    HELP="Ayuda"
+    UGUIDE="Mabox User Guide (online)"
+    SETTINGS="settings";;
+    de*)
+    TYPE_TO_SEARCH="Tippe für Suche"
+    APPS="Programme"
+    KEYS="Tastenkombinationen"
+    SCREENSHOT="Bildschirmfoto"
+    LOCKSCR="Sperrbildschirm"
+    EXIT="Verlassen..."
+    HELP="Hilfe"
+    UGUIDE="Mabox Users Guide (online)"
+    SETTINGS="settings";;
+    *) TYPE_TO_SEARCH="Type to Search"
+    APPS="Applications"
+    KEYS="Keybindings"
+    SCREENSHOT="Screenshot"
+    LOCKSCR="Lock screen"
+    EXIT="Exit..."
+    HELP="Help"
+    UGUIDE="Mabox Users Guide (online)"
+    SETTINGS="settings";;
+esac
+
+# Search field
+if [[ $search_field = "false" ]];then
+MENU_PADDING_TOP=${jgtools_padding}
+SEARCH_TEXT=""
+SEARCH_FIELD=""
+else
+MENU_PADDING_TOP=$((jgtools_padding + 38))
+SEARCH_TEXT="@text,,$((jgtools_padding + 10)),$((jgtools_padding + 4)),150,20,0,left,top,auto,#000000,<span size='large'></span>"
+SEARCH_FIELD="@search,,$((jgtools_padding + 38)),$((jgtools_padding + 4)),150,20,2,left,top,auto,#000000 0,<i>$TYPE_TO_SEARCH</i>"
+fi
+
+#apps_in_submenu=true
+rm -f ~/.config/jgmenu/append.csv
+if [[ $apps_in_submenu == true ]]
+then
+
+cat <<EOF > $HOME/.config/jgmenu/prepend.csv
+${SEARCH_TEXT}
+${SEARCH_FIELD}
+
+. ~/.config/mabox/favorites.csv
+$APPS,^checkout(apps),applications-other
+. ~/.config/mabox/mainmenu_below_apps.csv
+^sep()
+$KEYS, mbhelper -s,key_bindings
+^sep()
+$SCREENSHOT,mb-jgtools screenshot,emblem-photos
+^sep()
+$LOCKSCR,mbscreenlocker,system-lock-screen
+^sep()
+$EXIT,mb-jgtools mblogout,system-shutdown
+
+^tag($SETTINGS)
+. ~/.config/mabox/settings.csv
+
+^sep($HELP)
+$UGUIDE,^checkout(userguide),distributor-logo-mabox
+Mabox Forum,xdg-open https://forum.maboxlinux.org/,distributor-logo-mabox
+
+^tag(userguide)
+. /usr/share/mb-jgtools/userguide.csv
+
+. ~/.config/mabox/settings_tags.csv
+^tag(apps)
+EOF
+else
+
+cat <<EOF > $HOME/.config/jgmenu/prepend.csv
+${SEARCH_TEXT}
+${SEARCH_FIELD}
+
+. ~/.config/mabox/favorites.csv
+EOF
+
+cat <<EOF > $HOME/.config/jgmenu/append.csv
+. ~/.config/mabox/mainmenu_below_apps.csv
+^sep()
+$KEYS, mbhelper -s,key_bindings
+^sep()
+$SCREENSHOT,mb-jgtools screenshot,emblem-photos
+^sep()
+$LOCKSCR,mbscreenlocker,system-lock-screen
+^sep()
+$EXIT,mb-jgtools mblogout,system-shutdown
+
+^tag($SETTINGS)
+. ~/.config/mabox/settings.csv
+^sep($HELP)
+$UGUIDE,^checkout(userguide),distributor-logo-mabox
+MaboxForum,xdg-open https://forum.maboxlinux.org/,distributor-logo-mabox
+
+^tag(userguide)
+. /usr/share/mb-jgtools/userguide.csv
+
+. ~/.config/mabox/settings_tags.csv
+EOF
+
+fi
+
+
+[[ "$jgmenu_use_icons" == "false" ]] && icons=0 iconmargin=0 || icons=1 iconmargin=2
+mkconfigfile
+
+CACHE_DIR="$HOME/.cache/mmenu"
+mkdir -p ${CACHE_DIR}
+XDG_CACHE_HOME=${CACHE_DIR} jgmenu --config-file=${CONFIG_FILE} 2>/dev/null
+#trap 'on_exit' EXIT
+}
+
+# PANEL PO PRAWEJ AKTUALIZACE-USTAWIENIA-POMOC
+right() {
+mb-setvar jgtools_last="\"right\""
+
+CONFIG_FILE=$(mktemp)
+MENU_ITEMS=$(mktemp)
+RHEAD=$(mktemp)
+trap "rm -f ${CONFIG_FILE} ${MENU_ITEMS} ${RHEAD}" EXIT
+[ $jgmenu_use_icons == false ] && jgmenu_icon_size=0
+#BOTTOM_IMG=${right_bottom_img:-/usr/share/mb-jgtools/mabox_3D_gold.png}
+MENU_HALIGN="right"
+ITEM_HALIGN="left"
+JGWIDTH=40
+TABS="100"
+MENU_PADDING_TOP=$((jgtools_padding + 70))
+menu_margin_x=${submenu_spacing:-0}
+#panels_topmargin=${panels_topmargin:-0}
+#### Compact or full height
+if [[ $panels_heightpos == "full" ]]; then
+    eval $(xdotool getdisplaygeometry --shell)
+    MENU_HEIGHT_MIN="$HEIGHT"
+    MENU_HEIGHT_MAX=$MENU_HEIGHT_MIN
+    MENU_RADIUS="0"
+    menu_margin_x="0"
+elif [[ $panels_heightpos == "top" ]]; then
+MENU_VALIGN="top"
+MENU_MARGIN_Y=${panels_topmargin:-0}
+elif [[ $panels_heightpos == "bottom" ]]; then
+MENU_VALIGN="bottom"
+MENU_MARGIN_Y=${panels_topmargin:-0}
+else 
+    MENU_VALIGN="center"
+fi
+
+case $LANG in
+    pl*)
+        TYPE_TO_SEARCH="pisz, aby wyszukać"
+        SOFT_MANAGEMENT="Zarządzanie oprogramowaniem"
+        PAMAC_UPDATE="Aktualizacja systemu (Pamac)"
+        CLI_UPDATE="Aktualizacja systemu (cli)"
+        PAMAC="Menadżer pakietów - Pamac"
+        RENEW_KEYS="Odnawianie kluczy"
+        MIRROR_RANK="Ranking mirrorów"
+        SETTINGS="Ustawienia"
+        MCC="Centrum Sterowania Mabox"
+        SETTINGS_MENU="Konfiguracja Mabox"
+        SYS_AND_HARDWARE="System i sprzęt"
+        LOOK_AND_FEEL="Wygląd i zachowanie"
+        HELP="Pomoc"
+        SHORTCUTS="Skróty klawiszowe"
+        ONLINE_RES="Zasoby online"
+        OTHER="Inne"
+        SCREENSHOT="Zrzut ekranu"
+        BACK="wróć"
+        FAST="Szybko"
+        ALL="Wszystkie"
+        GEOIP="Najbliższe"
+        MSM="Menadżer Ustawień Manjaro"
+        LOCALE_SETTINGS="Język i formaty"
+        LANGUAGE_PACKAGES="Pakiety językowe"
+        KERNEL="Jądro systemowe"
+        USER_ACCOUNTS="Konta użytkowników"
+        TIME_DATE="Data i Czas"
+        KEYBOARD="Ustawienia klawiatury"
+        HARDWARE="Konfiguracja sprzętowa"
+        ARANDR="Rozdzielczość ekranu"
+        SYSINFO_TITLE="Sys info"
+        SYSINFO="Informacje o systemie"
+        LXAPPEARANCE="Wystrój i ikony"
+        NITROGEN="Wybór tapety"
+        OBCONF="Menadżer konfiguracji OpenBox"
+        NOTIFYD="Konfiguracja powiadomień"
+        PREFERRED_APPS="Preferowane aplikacje"
+        LIGHTDM="Ustawienia Menedżera logowania"
+        POWER_MNGR="Ustawienia zasilania"
+        MABOX_DESK_ELEM="Elementy pulpitu Mabox"
+        TINT2="Panele Tint2"
+        COMPOSER="Kompozytor"
+        MABOX_THEMES="Predefiniowane konfiguracje pulpitu"
+        THEME_MNGR="Menadżer schematów"
+        UGUIDE_TITLE="Przewodnik Użytkownika Mabox"
+        UGUIDE=". /usr/share/mb-jgtools/userguide_PL.csv"
+        FINISHED="  Finished! Press ENTER to quit"
+        ;;
+    es*)
+        TYPE_TO_SEARCH="Buscar"
+        SOFT_MANAGEMENT="Agregar/Quitar Software"
+        PAMAC_UPDATE="Actualizar el sistema(Tienda)"
+        CLI_UPDATE="Actualizar en la terminal (cli)"
+        PAMAC="Tienda de software"
+        RENEW_KEYS="Actualizar atajos de teclado"
+        MIRROR_RANK="Actualizar repositorios"
+        SETTINGS="Ajustes"
+        MCC="Centro de Control Mabox"
+        SETTINGS_MENU="Mabox Config"
+        SYS_AND_HARDWARE="Sistema y Hardware"
+        LOOK_AND_FEEL="Apariencia"
+        HELP="Ayuda"
+        SHORTCUTS="Atajos del teclado"
+        ONLINE_RES="Recursos en línea"
+        OTHER="Otros"
+        SCREENSHOT="Captura Pantalla"
+        BACK="atrás"
+        FAST="Repositorios rápidos"
+        ALL="Todos los repositorios"
+        GEOIP="Repositorios locales"
+        MSM="Gastor de Configuración de Manjaro"
+        LOCALE_SETTINGS="Ajustes de idioma"
+        LANGUAGE_PACKAGES="Paquetes de idioma"
+        KERNEL="Núcleo"
+        USER_ACCOUNTS="Cuentas de usuario"
+        TIME_DATE="Hora y Fecha"
+        KEYBOARD="Ajustes del teclado"
+        HARDWARE="Configuración Hardware"
+        ARANDR="Resolución de pantalla"
+        SYSINFO_TITLE="Resumen sistema"
+        SYSINFO="Información de sistema"
+        LXAPPEARANCE="Temas e íconos"
+        NITROGEN="Fondos de pantalla"
+        OBCONF="Configuración de Openbox"
+        NOTIFYD="Notificaciones"
+        PREFERRED_APPS="Aplicaciones Preferidas"
+        LIGHTDM="Gestor de Inicio de sesión"
+        POWER_MNGR="Ajustes de energía"
+        MABOX_DESK_ELEM="Escritorio Mabox"
+        TINT2="Paneles Tint2"
+        COMPOSER="Compositor gráfico"
+        MABOX_THEMES="Temas Mabox"
+        THEME_MNGR="Gestor de Temas"
+        UGUIDE_TITLE="Mabox User Guide"
+        UGUIDE=". /usr/share/mb-jgtools/userguide.csv"
+        FINISHED="  Finished! Press ENTER to quit"
+        ;;
+    *)
+        TYPE_TO_SEARCH="type to search"
+        SOFT_MANAGEMENT="Software management"
+        PAMAC_UPDATE="System update (Pamac)"
+        CLI_UPDATE="System update (cli)"
+        PAMAC="Pamac"
+        RENEW_KEYS="Renew keys"
+        MIRROR_RANK="Mirror ranking"
+        SETTINGS="Settings"
+        MCC="Mabox Control Center"
+        SETTINGS_MENU="Mabox Config"
+        SYS_AND_HARDWARE="System and Hardware"
+        LOOK_AND_FEEL="Look and Feel"
+        HELP="Help"
+        SHORTCUTS="Keyboard Shortcuts"
+        ONLINE_RES="Online Resources"
+        OTHER="Other"
+        SCREENSHOT="Screenshot Tool"
+        BACK="back"
+        FAST="Fasttrack"
+        ALL="All"
+        GEOIP="Geoip"
+        MSM="Manjaro Settings Manager"
+        LOCALE_SETTINGS="Locale Settings"
+        LANGUAGE_PACKAGES="Language Packages"
+        KERNEL="Kernel"
+        USER_ACCOUNTS="User Accounts"
+        TIME_DATE="Time and Date"
+        KEYBOARD="Keyboard Settings"
+        HARDWARE="Hardware Configuration"
+        ARANDR="Screen resolution"
+        SYSINFO_TITLE="Sys info"
+        SYSINFO="System information"
+        LXAPPEARANCE="Themes and icons"
+        NITROGEN="Wallpaper"
+        OBCONF="Openbox Configuration Manager"
+        NOTIFYD="Notifycations"
+        PREFERRED_APPS="Preffered Applications"
+        LIGHTDM="Login Manager Settings"
+        POWER_MNGR="Power Manager"
+        MABOX_DESK_ELEM="Mabox Desktop"
+        TINT2="Tint2 Panel(s)"
+        COMPOSER="Composer"
+        MABOX_THEMES="Mabox Themes"
+        THEME_MNGR="Theme Manager"
+        UGUIDE_TITLE="Mabox User Guide"
+        UGUIDE=". /usr/share/mb-jgtools/userguide.csv"
+        FINISHED="  Finished! Press ENTER to quit"
+      ;;
+esac
+
+[ $jgmenu_use_icons == false ] && icons=0 iconmargin=0 || icons=1 iconmargin=2
+
+
+if [ $panels_heightpos == "full" ]; then
+
+read WALLPATH<<< $(grep file "$HOME"/.config/nitrogen/bg-saved.cfg | cut -d'=' -f2)
+THUMBDIR="$HOME/.cache/colorizer/thumbs"
+    mkdir -p ${THUMBDIR}
+    NAME=${WALLPATH////_}
+    if [[ "${NAME}" =~ ^_home_.* ]]; then
+        n=${#HOME}
+        ((n++))
+        NAME=${NAME:${n}}
+    fi
+    THUMB="${THUMBDIR}/${NAME}.png"
+    if [[ ! -f "$THUMB" ]]
+        then
+        convert ${WALLPATH} -resize 270x150^ -gravity center -extent 270x150 ${THUMB}
+    fi
+
+
+JGWIDTH=$((jgtools_padding + 270 + jgtools_padding))
+MENU_PADDING_TOP=$((jgtools_padding + 152))
+cat <<EOF > ${RHEAD}
+@icon,,$((jgtools_padding)),$((jgtools_padding)),270,150,4,left,top,,,${THUMB}
+@rect,,$((jgtools_padding + 0)),$((jgtools_padding + 14)),270,22,0,left,top,#222222 20,#222222 70,
+@text,,$((jgtools_padding + 100)),$((jgtools_padding + 10)),200,30,0,left,top,#EEEEEE ,${WINCLR},<span size='10400' font_family='Ubuntu'><b>$OSNAME</b> Linux <b>$OSVERSION</b> <i>$OSCODE</i></span>
+#@icon,,$((jgtools_padding + 2)),$((jgtools_padding + 2)),48,48,4,left,top,,,/usr/share/icons/hicolor/48x48/apps/distributor-logo-mabox.png
+@rect,,$((jgtools_padding + 0)),$((jgtools_padding + 120)),160,22,2,left,top,#222222 50,#222222 80,
+@search,,$((jgtools_padding + 8)),$((jgtools_padding + 120)),292,20,4,left,top,#EEEEEE,##EEEEEE,"""<big></big> <span size='10400' font_family='Ubuntu'><i>$TYPE_TO_SEARCH</i></span>"""
+EOF
+else
+cat <<EOF > ${RHEAD}
+#@icon,,$((jgtools_padding + 2)),$((jgtools_padding + 10)),48,48,4,left,top,,,/usr/share/icons/hicolor/48x48/apps/distributor-logo-mabox.png
+@text,,$((jgtools_padding + 56)),$((jgtools_padding + 10)),200,20,4,left,top,auto,#111111,<big>$OSNAME $OSVERSION</big> <sup><i>$OSCODE</i></sup>
+@text,,$((jgtools_padding + 56)),$((jgtools_padding + 30)),200,20,4,left,top,auto,#444444,<small>$USER@$HOSTNAME</small>
+@search,,$((gtools_padding + 80)),$((jgtools_padding + 50)),292,20,4,left,top,auto,#262626,"""<big></big> <small><i>$TYPE_TO_SEARCH</i></small>"""
+EOF
+fi
+
+mkconfigfile
+
+cat <<EOF > ${MENU_ITEMS}
+. ${RHEAD}
+
+. $HOME/.config/mabox/right-prepend.csv
+
+^sep($SETTINGS)
+#$MCC,mcc,mcc,distributor-logo-mabox
+#^sep()
+$SETTINGS_MENU,^root(msettings),mbcc
+$SYS_AND_HARDWARE,^root(system),audiocard
+
+^sep($SOFT_MANAGEMENT)
+$PAMAC_UPDATE,pamac-manager --updates,system-upgrade
+$CLI_UPDATE,mb-cli update,openterm
+$PAMAC,pamac-manager,pamac
+$RENEW_KEYS,^term(sudo pacman -Sy archlinux-keyring manjaro-keyring mabox-keyring;read -p "${FINISHED}"),keysync
+$MIRROR_RANK,^root(mirrory),download
+
+^sep($HELP)
+
+$UGUIDE_TITLE,^root(userguide),distributor-logo-mabox
+Mabox Forum,xdg-open https://forum.maboxlinux.org,distributor-logo-mabox
+#$SHORTCUTS,^pipe(jgkeys-pipe),key_bindings
+$SHORTCUTS,mbhelper -s,key_bindings
+$ONLINE_RES,^root(weblinks),web-browser
+
+^sep($OTHER)
+$SCREENSHOT,mb-jgtools screenshot,emblem-photos
+
+. $HOME/.config/mabox/right-append.csv
+. $HOME/.config/mabox/exit.csv
+
+
+^tag(system)
+^sep($SETTINGS)
+$MCC,mcc,distributor-logo-mabox
+^sep($SYS_AND_HARDWARE)
+$MSM,manjaro-settings-manager,distributor-logo-manjaro
+^sep()
+$LOCALE_SETTINGS,manjaro-settings-manager -m msm_locale,chronometer
+$LANGUAGE_PACKAGES,manjaro-settings-manager -m msm_language_packages,globe
+$KERNEL,manjaro-settings-manager -m msm_kernel,distributor-logo-linux
+$USER_ACCOUNTS,manjaro-settings-manager -m msm_users,system-config-users
+$TIME_DATE,manjaro-settings-manager -m msm_timedate,system-config-date
+$KEYBOARD,manjaro-settings-manager -m msm_keyboard,preferences-desktop-keyboard
+$HARDWARE,manjaro-settings-manager -m msm_mhwd,preferences-desktop-peripherals-directory
+^sep()
+$ARANDR,arandr,monitor
+^sep($SYSINFO_TITLE)
+$SYSINFO,^pipe(jgsysinfo-pipe),distributor-logo-linux
+${arrow_string_left}  $BACK,^back()
+
+^tag(mirrory)
+$FAST	<small>pacman-mirrors -f5</small>,mb-cli mirrors
+$ALL	<small>pacman-mirrors -i -c all</small>,mb-cli mirrors_all
+$GEOIP	<small>pacman-mirrors -i --geoip</small>,mb-cli mirrors_geo
+^sep()
+${arrow_string_left}  $BACK,^back()
+
+^tag(msettings)
+. ~/.config/mabox/settings.csv
+^sep()
+${arrow_string_left}  $BACK,^back()
+. ~/.config/mabox/settings_tags.csv
+
+^tag(userguide)
+$UGUIDE
+^sep()
+${arrow_string_left}  $BACK,^back()
+^tag(weblinks)
+#^sep($ONLINE_RES)
+^sep(Mabox Linux)
+Mabox Website,xdg-open  https://maboxlinux.org/,distributor-logo-mabox
+Mabox Forum,xdg-open https://forum.maboxlinux.org/,distributor-logo-mabox
+Mabox Manual,xdg-open https://manual.maboxlinux.org/,distributor-logo-mabox
+Donate,xdg-open https://ko-fi.com/maboxlinux,application-community
+^sep(Manjaro)
+Stable Updates,xdg-open https://forum.manjaro.org/c/announcements/stable-updates/,distributor-logo-manjaro
+Manjaro Wiki,xdg-open https://wiki.manjaro.org,distributor-logo-manjaro
+Manjaro Forum,xdg-open https://forum.manjaro.org,distributor-logo-manjaro
+Branch Compare,xdg-open https://packages.manjaro.org/,distributor-logo-manjaro
+
+^sep(ArchLinux)
+ArchWiki,xdg-open https://wiki.archlinux.org/,distributor-logo-archlinux
+Manual pages indexing service,xdg-open https://man.archlinux.org/,distributor-logo-archlinux
+^sep(Openbox)
+OpenBox,xdg-open http://openbox.org/wiki/Help:Contents,openbox
+OpenBox ArchWiki,xdg-open https://wiki.archlinux.org/index.php/Openbox,openbox
+^sep(Jgmenu)
+Jgmenu homesite,xdg-open https://jgmenu.github.io/,jgmenu
+Jgmenu GitHub,xdg-open https://github.com/johanmalm/jgmenu,jgmenu
+
+^sep(Terminator)
+Terminator GitHub,xdg-open https://gnome-terminator.github.io/,terminator
+Terminator Docs,xdg-open https://gnome-terminator.readthedocs.io/en/latest/,terminator
+
+^sep(Tint2)
+Tint2 GitLab,xdg-open https://gitlab.com/o9000/tint2,tint2
+Tint2 ArchWiki,xdg-open https://wiki.archlinux.org/index.php/Tint2,tint2
+^sep(Conky)
+Conky Website,xdg-open http://conky.cc,conky
+Conky Github,xdg-open https://github.com/brndnmtthws/conky/wiki,conky
+Conky ArchWiki,xdg-open https://wiki.archlinux.org/index.php/Conky,conky
+
+#. $HOME/.config/mabox/online-resources.csv
+^sep()
+${arrow_string_left}  $BACK,^back()
+
+EOF
+
+CACHE_DIR="$HOME/.cache/mrightpanel"
+mkdir -p ${CACHE_DIR}
+XDG_CACHE_HOME=${CACHE_DIR} jgmenu --config-file=${CONFIG_FILE} --csv-file=${MENU_ITEMS} 2>/dev/null
+}
+
+places() {
+mb-setvar jgtools_last="\"places\""
+
+CONFIG_FILE=$(mktemp)
+MENU_ITEMS=$(mktemp)
+QNAV=$(mktemp)
+LHEAD=$(mktemp)
+trap "rm -f ${CONFIG_FILE} ${MENU_ITEMS} ${QNAV} ${LHEAD}" EXIT
+
+case $LANG in
+    pl*)
+        QUICK_NAV="Szybka nawigacja"
+        HOME_DIR="Katalog Domowy"
+        ROOTDIR="Katalog główny"
+        PIPEMENUS="Narzędzia"
+        POPINSTALL="Instaluj popularne programy"
+        SYSINFO="Informacje o systemie"
+        SHORTCUTS="Skróty klawiszowe"
+        MENUPANELS="Ustawienia Menu/Paneli"
+        TINT2SETTINGS="Ustawienia panelu Tint2"
+        CONKYSETTINGS="Ustawienia Conky"
+        SSH_CONN="Połącz po SSH"
+        DESKMNGR="Desktop Session Manager"
+        DESKTOPS="Pulpity i Okna"
+        SUPERCLICK="SuperClick"
+        WALLCHANGER="Tapeta"
+        LOCKSCREEN="Blokada Ekranu"
+        MBHELPER="Paleta komend (<b>super+F1</b>)"
+        ;;
+    es*)
+        QUICK_NAV="Navegación rápida"
+        HOME_DIR="Carpeta personal"
+        ROOTDIR="Directorio raíz"
+        PIPEMENUS="Menu con extras"
+        POPINSTALL="Instalar Programas populares"
+        SYSINFO="System information"
+        SHORTCUTS="Atajos del teclado"
+        MENUPANELS="Menu/Paneles laterales"
+        TINT2SETTINGS="Tint2 panel settings"
+        CONKYSETTINGS="Conky settings"
+        SSH_CONN="Conexiones SSH"
+        DESKMNGR="Desktop Session Manager"
+        DESKTOPS="Desktops and Windows"
+        SUPERCLICK="SuperClick"
+        WALLCHANGER="Wallpaper"
+        LOCKSCREEN="Screen Locker"
+        MBHELPER="Cmd palette (<b>super-F1</b>)"
+        ;;
+    *)
+        QUICK_NAV="Quick Navigation"
+        HOME_DIR="Home Directory"
+        ROOTDIR="Main Directory"
+        PIPEMENUS="Mabox Tools"
+        POPINSTALL="Install popular apps"
+        SYSINFO="System information"
+        SHORTCUTS="Keyboard shortcuts"
+        MENUPANELS="Menu/Sidepanels settings"
+        TINT2SETTINGS="Tint2 panel settings"
+        CONKYSETTINGS="Conky settings"
+        SSH_CONN="SSH connections"
+        DESKMNGR="Desktop Session Manager"
+        DESKTOPS="Desktops and Windows"
+        SUPERCLICK="SuperClick"
+        WALLCHANGER="Wallpaper"
+        LOCKSCREEN="Screen Locker"
+        MBHELPER="Cmd palette (<b>super-F1</b>)"
+      ;;
+esac
+
+
+#panels_topmargin=${panels_topmargin:-0}
+
+menu_margin_x=${submenu_spacing:-0}
+[ $panels_topmargin == 0 ] && menu_margin_x=0
+#### Compact or full height
+if [[ $panels_heightpos == "full" ]]; then
+eval $(xdotool getdisplaygeometry --shell)
+MENU_HEIGHT_MIN="$HEIGHT"
+MENU_HEIGHT_MAX=$MENU_HEIGHT_MIN
+MENU_RADIUS="0"
+menu_margin_x="0"
+elif [[ $panels_heightpos == "top" ]]; then
+MENU_VALIGN="top"
+MENU_MARGIN_Y=${panels_topmargin:-0}
+elif [[ $panels_heightpos == "bottom" ]]; then
+MENU_VALIGN="bottom"
+MENU_MARGIN_Y=${panels_topmargin:-0}
+else
+    MENU_VALIGN="center"
+    
+fi
+
+JGWIDTH=40
+icons=0
+iconmargin=0
+MENU_PADDING_TOP=$((jgtools_padding + 60))
+#BOTTOM_IMG=${places_bottom_img:-/usr/share/mb-jgtools/mabox_3D_silver.png}
+#if [[ $places_softwarepipe || $places_sysinfopipe || $places_keyspipe ]];then pipeseparator="^sep($PIPEMENUS)";fi
+
+#QUICK NAV
+[ -v places_quicknav ] && : || mb-setvar places_quicknav=true
+if [ $places_quicknav == true ];then
+cat <<EOF > ${QNAV}
+^sep($QUICK_NAV)
+<tt><big></big></tt>  $ROOTDIR,^pipe(jgbrowser /),folder
+<tt><big></big></tt> $HOME_DIR,^pipe(jgbrowser),folder-home
+<big>  </big>  $(basename $(xdg-user-dir DOWNLOAD)),^pipe(jgbrowser $(xdg-user-dir DOWNLOAD)),folder-download
+<big>  </big>  $(basename $(xdg-user-dir DOCUMENTS)),^pipe(jgbrowser $(xdg-user-dir DOCUMENTS)),folder-documents
+<big>  </big>  $(basename $(xdg-user-dir MUSIC)),^pipe(jgbrowser $(xdg-user-dir MUSIC)),folder-music
+<big>  </big>  $(basename $(xdg-user-dir PICTURES)),^pipe(jgbrowser $(xdg-user-dir PICTURES)),folder-pictures
+<big>  </big>  $(basename $(xdg-user-dir VIDEOS)),^pipe(jgbrowser $(xdg-user-dir VIDEOS)),folder-video
+EOF
+else
+QNAV=""
+fi
+
+# PIPEMENUS
+[ $places_menusettingspipe == true ] && menusettingspipe="<big>󰍜</big>  $MENUPANELS,^pipe(jgmenusettings-pipe -r)" && pipesep="^sep($PIPEMENUS)"
+[ $places_tint2pipe == true ] && tint2pipe="<big></big>  $TINT2SETTINGS,^pipe(jgtint2-pipe -r)" && pipesep="^sep($PIPEMENUS)"
+[ $places_sysinfopipe == true ] && sysinfopipe="<big></big>  $SYSINFO,^pipe(jgsysinfo-pipe -r)" && pipesep="^sep($PIPEMENUS)"
+#[ $places_keyspipe == true ] && keyspipe="<big></big> $SHORTCUTS,^pipe(jgkeys-pipe -r)" && pipesep="^sep($PIPEMENUS)"
+[ $places_sshpipe == true ] && sshpipe="<big></big>  $SSH_CONN,^pipe(jgssh -r)" && pipesep="^sep($PIPEMENUS)"
+[ $places_softwarepipe == true ] && softwarepipe="<big></big>  $POPINSTALL,^pipe(jgsoftware-pipe -r)" && pipesep="^sep($PIPEMENUS)"
+[[ $places_conkypipe == true || -z ${places_conkypipe} ]] && conkypipe="<big></big> $CONKYSETTINGS,^pipe(jgconky-pipe -r)" && pipesep="^sep($PIPEMENUS)"
+[[ $places_jgdeskmngr == true || -z ${places_jgdeskmngr} ]] && jgdeskmngr="<big></big>  $DESKMNGR,^pipe(jgdeskmngr -r)" && pipesep="^sep($PIPEMENUS)"
+[[ $places_jgdesktops == true || -z ${places_jgdesktops} ]] && jgdesktops="<big></big>  $DESKTOPS,^pipe(jgdesktops -r)" && pipesep="^sep($PIPEMENUS)"
+[[ $places_jgdeskgrid == true || -z ${places_jgdeskgrid} ]] && jgdeskgrid="<big></big>  $SUPERCLICK,^pipe(jgdeskgrid -r)" && pipesep="^sep($PIPEMENUS)"
+[[ $places_jgwallpaperchanger == true || -z ${places_jgwallpaperchanger} ]] && jgwallpaperchanger="<big></big>  $WALLCHANGER,^pipe(jgwallpaperchanger -r)" && pipesep="^sep($PIPEMENUS)"
+[[ $places_jglockscreen == true || -z ${places_jglockscreen} ]] && jglockscreen="<big></big>  $LOCKSCREEN,^pipe(jglockscreen -r)" && pipesep="^sep($PIPEMENUS)"
+
+# VBOXES
+if [[ -x "$(command -v VBoxManage)" ]]; then
+[[ $places_vboxes == true ]] && vboxes=". $HOME/.config/mabox/vboxes.csv" || vboxes=""
+fi
+if [ $panels_heightpos == "full" ]; then
+read WALLPATH<<< $(grep file "$HOME"/.config/nitrogen/bg-saved.cfg | cut -d'=' -f2)
+THUMBDIR="$HOME/.cache/colorizer/thumbs"
+    mkdir -p ${THUMBDIR}
+    NAME=${WALLPATH////_}
+    if [[ "${NAME}" =~ ^_home_.* ]]; then
+        n=${#HOME}
+        ((n++))
+        NAME=${NAME:${n}}
+    fi
+    THUMB="${THUMBDIR}/${NAME}.png"
+    if [[ ! -f "$THUMB" ]]
+        then
+        convert ${WALLPATH} -resize 270x150^ -gravity center -extent 270x150 ${THUMB}
+    fi
+JGWIDTH=$((jgtools_padding + 270 + jgtools_padding))
+MENU_PADDING_TOP=$((jgtools_padding + 152))
+cat <<EOF > ${LHEAD}
+@icon,,$((jgtools_padding)),$((jgtools_padding)),270,150,4,left,top,,,${THUMB}
+#@icon,,$((jgtools_padding - 6)),$((jgtools_padding - 6)),48,48,4,left,top,,,/usr/share/icons/hicolor/48x48/apps/mbcc.png
+@rect,,$((jgtools_padding + 0)),$((jgtools_padding + 122)),240,22,0,left,top,#222222 20,#222222 70,
+@text,,$((jgtools_padding + 68)),$((jgtools_padding + 118)),180,30,0,left,top,#EEEEEE ,${WINCLR},<span size='10400' font_family='Ubuntu'><b>$OSNAME</b> Linux <b>$OSVERSION</b> <i>$OSCODE</i></span>
+#@text,,$((jgtools_padding + 62)),$((jgtools_padding + 30)),180,20,4,left,top,#222222,#444444,<small>$USER@$HOSTNAME</small>
+EOF
+else
+cat <<EOF > ${LHEAD}
+@icon,,$((jgtools_padding + 2)),$((jgtools_padding + 10)),48,48,4,left,top,,,/usr/share/icons/hicolor/48x48/apps/mbcc.png
+@text,,$((jgtools_padding + 62)),$((jgtools_padding + 10)),200,20,4,left,top,auto,#111111,<big>$OSNAME $OSVERSION</big> <sup><i>$OSCODE</i></sup>
+@text,,$((jgtools_padding + 62)),$((jgtools_padding + 30)),200,20,4,left,top,auto,#444444,<small>$USER@$HOSTNAME</small>
+EOF
+fi
+
+mkconfigfile
+
+cat <<EOF > ${MENU_ITEMS}
+. ${LHEAD}
+
+. $HOME/.config/mabox/places-prepend.csv
+. ${QNAV}
+
+
+$(gtkbookmarks)
+$pipesep
+<big></big>  $MBHELPER,mbhelper -s
+$menusettingspipe
+$jgwallpaperchanger
+$jglockscreen
+$jgdesktops
+$jgdeskmngr
+$jgdeskgrid
+$sysinfopipe
+$sshpipe
+$softwarepipe
+$tint2pipe
+$conkypipe
+
+${vboxes}
+. $HOME/.config/mabox/places-append.csv
+EOF
+
+jgmenu --config-file=${CONFIG_FILE} --csv-file=${MENU_ITEMS} 2>/dev/null	
+}
+
+mblogout() {
+jgmenu_icon_theme="Numix-Circle"
+if [[ -n "$1" ]]
+        then
+            POSITION_MODE=${1:-pointer}
+        else
+		    MENU_HALIGN="center"
+            MENU_VALIGN="center"
+fi
+CONFIG_FILE=$(mktemp)
+MENU_ITEMS=$(mktemp)
+trap "rm -f ${CONFIG_FILE} ${MENU_ITEMS};#wmctrl -k off" EXIT
+
+case $LANG in
+    pl*) CANCEL="Anuluj"
+    SWITCHUSER="Przełącz użytkownika"
+    SWITCHTO="Przełącz na..."
+    NEWSESS="Nowa sesja jako..."
+    ;;
+    es*) CANCEL="Cancelar"
+    SWITCHUSER="Switch user"
+    SWITCHTO="Switch to..."
+    NEWSESS="New session as..."
+    ;;
+    *) CANCEL="Cancel"
+    SWITCHUSER="Switch user"
+    SWITCHTO="Switch to..."
+    NEWSESS="New session as..."
+    ;;
+esac
+jgtools_padding=${jgtools_padding:-0}
+#JGWIDTH=$((jgtools_padding + 348 + jgtools_padding))
+#MENU_PADDING_TOP=$((jgtools_padding + 221))
+JGWIDTH=$((jgtools_padding + 270 + jgtools_padding))
+MENU_PADDING_TOP=$((jgtools_padding + 152))
+TABS="200"
+icons=1 
+iconmargin=2
+item_height_factor=300
+#jgmenu_font="Noto Sans Medium 11"
+
+mkconfigfile
+if pgrep -f /usr/bin/lightdm >/dev/null
+then
+	ALLUSERS=( $(getent passwd {1000..1010}|cut -d: -f1) )
+	if [[ ${#ALLUSERS[@]} -gt 1 ]];then
+	SESSIONS=( $(dm-tool list-seats|grep UserName|cut -d"'" -f2) )
+
+	SW+=("^sep()" "$SWITCHUSER,^checkout(users),system-switch-user")
+	SW2+=("^tag(users)")
+		if [[ ${#SESSIONS[@]} -gt 1 ]];then
+		SW2+=("^sep($SWITCHTO)")
+		for usess in "${SESSIONS[@]}";do
+		[[ "$usess" != "$USER" ]] && SW2+=("$usess, dm-tool switch-to-user $usess,system-switch-user") 
+		done
+		fi
+
+		for element in "${SESSIONS[@]}";do
+			ALLUSERS=(${ALLUSERS[@]/*${element}*/})
+		done
+		if [[ ${#ALLUSERS[@]} -gt 0 ]];then
+		SW2+=("^sep($NEWSESS)")
+		for u in "${ALLUSERS[@]}";do
+		SW2+=("$u,dm-tool switch-to-user $u,system-switch-user")
+		done
+		fi
+	fi
+fi
+
+#wmctrl -k on
+read WALLPATH<<< $(grep file "$HOME"/.config/nitrogen/bg-saved.cfg | cut -d'=' -f2)
+THUMBDIR="$HOME/.cache/colorizer/thumbs"
+    mkdir -p ${THUMBDIR}
+    NAME=${WALLPATH////_}
+    if [[ "${NAME}" =~ ^_home_.* ]]; then
+        n=${#HOME}
+        ((n++))
+        NAME=${NAME:${n}}
+    fi
+    THUMB="${THUMBDIR}/${NAME}.png"
+    if [[ ! -f "$THUMB" ]]
+        then
+        convert ${WALLPATH} -resize 270x150^ -gravity center -extent 270x150 ${THUMB}
+    fi
+
+
+cat <<EOF > ${MENU_ITEMS}
+@icon,,$((jgtools_padding)),$((jgtools_padding)),270,150,4,left,top,,,$THUMB
+@rect,,$((jgtools_padding + 0)),$((jgtools_padding + 120)),270,22,2,left,top,#222222 50,#222222 80,
+@text,,$((jgtools_padding + 8)),$((jgtools_padding + 120)),292,20,4,left,top,#EEEEEE,##EEEEEE,"""<span size='10400' font_family='Ubuntu'>$USER @ $HOSTNAME</span>"""
+@icon,,224,108,48,48,4,left,top,,,/usr/share/icons/hicolor/48x48/apps/mbcc.png
+
+. $HOME/.config/mabox/exit.csv
+$(printf '%s\n' "${SW[@]}")
+^sep()
+$CANCEL	<small>esc</small>,exit 1,gtk-close
+$(printf '%s\n' "${SW2[@]}")
+EOF
+CACHE_DIR="$HOME/.cache/mblogout"
+mkdir -p ${CACHE_DIR}
+XDG_CACHE_HOME=${CACHE_DIR} jgmenu --config-file=${CONFIG_FILE} --csv-file=${MENU_ITEMS} 2>/dev/null
+}
+
+screenshot() {
+CONFIG_FILE=$(mktemp)
+MENU_ITEMS=$(mktemp)
+trap "rm -f ${CONFIG_FILE} ${MENU_ITEMS}" EXIT
+
+case $LANG in
+    pl*)
+    SCRNSHOTS="Zrzuty ekranu"
+    FULLSCR="Pełny ekran"
+    ACTIVE_WIN="Aktywne okno"
+    ACTIVE_WIN_NO_DECOR="Aktywne okno (bez dekoracji)"
+    SELECTED="Zaznaczony obszar lub okno"
+    NOW="Teraz"
+    SEC5="Za 5 sekund"
+    SEC10="Za 10 sekund"
+    SEC15="Za 15 sekund"
+    BACK="wróć"
+    OPEN_SCR_DIR="Otwórz katalog ze zrzutami ekranu"
+    CANCEL="Anuluj"
+    SCRNREC="Nagrywanie pulpitu"
+    FULLREC="Pełny ekran"
+    AREA="Obszar lub okno"
+    SETTINGS="Ustawienia"
+    SCROTSETTINGS="Zrzuty ekranu"
+    EXTENSION="Typ obrazka (rozszerzenie)"
+    VIDEOSETTINGS="Ustawienia nagrywania"
+    AUDIO="Dźwięk"
+    FORMAT="Kontener (rozszerzenie)"
+    FRAMERATE="Klatki na sekundę (fps)"
+    REC_AUDIO="Nagrywaj dźwięk"
+    NO_AUDIO="Bez dźwięku"
+    OPEN_REC_DIR="Otwórz katalog z nagraniami"
+    EDIT_CONF_FILE="Edytuj plik konfiguracyjny"
+    ;;
+    es*)
+    SCRNSHOTS="Captura Pantalla"
+    FULLSCR="Pantalla completa"
+    ACTIVE_WIN="Ventana Activa"
+    ACTIVE_WIN_NO_DECOR="Ventana Activa (sin decoraciones)"
+    SELECTED="Seleccionar Área o Ventana"
+    NOW="Ahora"
+    SEC5="En 5 segundos"
+    SEC10="En 10 segundos"
+    SEC15="En 15 segundos"
+    BACK="atrás"
+    OPEN_SCR_DIR="Abrir carpeta de capturas"
+    CANCEL="Cancelar"
+    SCRNREC="Grabador Captura Pantalla"
+    FULLREC="Pantalla Completa "
+    AREA="Área seleccionada o Ventana"
+    SETTINGS="Ajustes"
+    SCROTSETTINGS="Screenshot settings"
+    EXTENSION="File type (extension)"
+    VIDEOSETTINGS="Ajustes de Grabación"
+    AUDIO="Audio"
+    FORMAT="Formato de archivo (extension)"
+    FRAMERATE="Velocidad de cuadros (fps)"
+    REC_AUDIO="Grabar con Audio"
+    NO_AUDIO="Grabar sin Audio"
+    OPEN_REC_DIR="Abrir carpeta de grabaciones"
+    EDIT_CONF_FILE="Editar configuración"
+    ;;
+    *)
+    SCRNSHOTS="Screenshot"
+    FULLSCR="Full screen"
+    ACTIVE_WIN="Active window"
+    ACTIVE_WIN_NO_DECOR="Active window (no decorations)"
+    SELECTED="Selected Area or Window"
+    NOW="Now"
+    SEC5="In 5 seconds"
+    SEC10="In 10 seconds"
+    SEC15="In 15 seconds"
+    BACK="back"
+    OPEN_SCR_DIR="Open screenshot directory"
+    CANCEL="Cancel"
+    SCRNREC="Screen recording"
+    FULLREC="Full screen "
+    AREA="Selected Area or Window"
+    SETTINGS="Settings"
+    SCROTSETTINGS="Screenshot settings"
+    EXTENSION="File type (extension)"
+    VIDEOSETTINGS="Recording settings"
+    AUDIO="Audio"
+    FORMAT="Container (file extension)"
+    FRAMERATE="Framerate (fps)"
+    REC_AUDIO="Record Audio"
+    NO_AUDIO="No Audio"
+    OPEN_REC_DIR="Open recordings dir"
+    EDIT_CONF_FILE="Edit config file"
+     ;;
+esac
+jgtools_padding=${jgtools_padding:-0}
+POSITION_MODE=${1:-fixed}
+JGWIDTH=$((jgtools_padding + 348 + jgtools_padding))
+MENU_PADDING_TOP=$((jgtools_padding + 221))
+MENU_HALIGN="center"
+MENU_VALIGN="center"
+TABS="280"
+icons=0
+iconmargin=0
+item_height_factor=300
+
+#MENU_RADIUS=${RADIUS:-0}
+
+[ -d $(xdg-user-dir PICTURES)/screenshots ] || mkdir -p $(xdg-user-dir PICTURES)/screenshots
+
+
+
+# Video recordings
+CNF_FILE="$HOME"/.config/mabox/mb-screenrec.conf
+
+if [ ! -f $CNF_FILE ]; then
+cat <<EOF > ${CNF_FILE}
+# Container (file extension): webm,mp4 or mkv
+container=webm
+# Record Audio? yes or no
+record_audio=no
+#Framerate (frames per second)
+framerate=30
+# Screenshot file type/extension
+image_extension=webp
+EOF
+fi
+. "$CNF_FILE"
+
+EXT=${image_extension:-png}
+
+
+IMG="$(xdg-user-dir PICTURES)/screenshots/Mabox_$(date +'%Y%m%d-%H-%M-%S').${EXT}"
+VIEW="'viewnior $IMG'"
+
+THUMB="$(DISPLAY=:0 scrot -t 340x213 -o $HOME/.config/mabox/jgscrot.png -e 'echo $m')"
+
+if [ "$record_audio" == "yes" ];then
+    case "$LANG" in
+        pl*) AUD="dźwięk";;
+        *) AUD="audio";;
+    esac
+else
+    case "$LANG" in
+        pl*) AUD="cisza";;
+        *)   AUD="noaudio";;
+    esac
+fi
+mkconfigfile
+
+cat <<EOF > ${MENU_ITEMS}
+@icon,,$((jgtools_padding + 4)),$((jgtools_padding + 4)),340,100,4,left,top,,,$THUMB
+^sep($SCRNSHOTS <small>($EXT)</small>)
+      $FULLSCR,^root(full)
+      $ACTIVE_WIN,^root(window)
+      $ACTIVE_WIN_NO_DECOR,^root(borderless)
+      $SELECTED,^root(selected)
+
+#      Multimonitor, scrot -m $IMG -e $VIEW
+^sep()
+      $OPEN_SCR_DIR,xdg-open $(xdg-user-dir PICTURES)/screenshots
+^sep($SCRNREC <small>($container ${AUD} $framerate fps)</small>)
+      $FULLREC,mb-screenrec -f
+      $AREA,mb-screenrec -a
+^sep()
+
+     $OPEN_REC_DIR,xdg-open $(xdg-user-dir VIDEOS)/Recordings
+^sep()
+    $SETTINGS,^checkout(settings)
+^sep()
+      $CANCEL	<small>esc</small>,exit 1
+^tag(full)
+^sep($FULLSCR    )
+      $NOW,scrot $IMG -e $VIEW
+      $SEC5,scrot -d 5 $IMG -e $VIEW
+      $SEC10,scrot -d 10 $IMG -e $VIEW
+      $SEC15,scrot -d 15 $IMG -e $VIEW
+^sep()
+   ${arrow_string_left}   $BACK,^back()
+^tag(window)
+^sep($ACTIVE_WIN    )
+      $NOW,scrot -d 1 -u -b $IMG -e $VIEW
+      $SEC5,scrot -d 5 -u -b $IMG -e $VIEW
+      $SEC10,scrot -d 10 -u -b $IMG -e $VIEW
+      $SEC15,scrot -d 15 -u -b $IMG -e $VIEW
+^sep()
+   ${arrow_string_left}   $BACK,^back()
+^tag(borderless)
+^sep($ACTIVE_WIN_NO_DECOR)
+      $NOW,scrot -d 1 -u $IMG -e $VIEW
+      $SEC5,scrot -d 5 -u $IMG -e $VIEW
+      $SEC10,scrot -d 10 -u $IMG -e $VIEW
+      $SEC15,scrot -d 15 -u $IMG -e $VIEW
+^sep()
+   ${arrow_string_left}   $BACK,^back()
+^tag(selected)
+^sep($SELECTED)
+      $NOW,"""maim -s -l -b 3 --color=0.3,0.4,0.6,0.4 ${IMG};viewnior ${IMG}"""
+      $SEC5,"""maim -s -l --delay=5 -b 3 --color=0.3,0.4,0.6,0.4 ${IMG};viewnior ${IMG}"""
+      $SEC10,"""maim -s -l --delay=10  -b 3 --color=0.3,0.4,0.6,0.4 ${IMG};viewnior ${IMG}"""
+      $SEC15,"""maim -s -l --delay=15  -b 3 --color=0.3,0.4,0.6,0.4 ${IMG};viewnior ${IMG}"""
+^sep()
+   ${arrow_string_left}   $BACK,^back()
+^tag(settings)
+^sep($SCROTSETTINGS)
+$EXTENSION [ <b>${EXT}</b> ],^checkout(imgext)
+^sep($VIDEOSETTINGS)
+$AUDIO [ <b>${AUD}</b> ],^checkout(audio)
+$FORMAT [ <b>${container}</b> ],^checkout(format)
+$FRAMERATE [ <b>${framerate}</b> ],^checkout(framerate)
+^sep()
+    $EDIT_CONF_FILE,xdg-open $CNF_FILE
+^tag(imgext)
+^sep($EXTENSION)
+WebP (.webp),mb-setvar image_extension=webp ${CNF_FILE};mb-jgtools screenshot ipc
+PNG (.png),mb-setvar image_extension=png ${CNF_FILE};mb-jgtools screenshot ipc
+JPG (.jpg),mb-setvar image_extension=jpg ${CNF_FILE};mb-jgtools screenshot ipc
+^tag(audio)
+^sep($AUDIO)
+$REC_AUDIO,mb-setvar record_audio=yes ${CNF_FILE};mb-jgtools screenshot ipc
+$NO_AUDIO,mb-setvar record_audio=no ${CNF_FILE};mb-jgtools screenshot ipc
+^tag(format)
+^sep($FORMAT)
+webm,mb-setvar container=webm ${CNF_FILE};mb-jgtools screenshot ipc
+mkv,mb-setvar container=mkv ${CNF_FILE};mb-jgtools screenshot ipc
+mp4,mb-setvar container=mp4 ${CNF_FILE};mb-jgtools screenshot ipc
+^tag(framerate)
+^sep($FRAMERATE)
+30,mb-setvar framerate=30 ${CNF_FILE};mb-jgtools screenshot ipc
+25,mb-setvar framerate=25 ${CNF_FILE};mb-jgtools screenshot ipc
+24,mb-setvar framerate=24 ${CNF_FILE};mb-jgtools screenshot ipc
+15,mb-setvar framerate=15 ${CNF_FILE};mb-jgtools screenshot ipc
+10,mb-setvar framerate=10 ${CNF_FILE};mb-jgtools screenshot ipc
+EOF
+cat "${MENU_ITEMS}"
+jgmenu --config-file=${CONFIG_FILE} --csv-file=${MENU_ITEMS} 2>/dev/null
+}
+
+
+settings() {
+mb-setvar jgtools_last="\"settings ipc\""
+
+CONFIG_FILE=$(mktemp)
+MENU_ITEMS=$(mktemp)
+trap "rm -f ${CONFIG_FILE} ${MENU_ITEMS}" EXIT
+POSITION_MODE=${1:-pointer}
+HIDE_BACK_ITEMS=1
+MENU_PADDING_TOP=${jgtools_padding:-0}
+
+TABS="90"
+[ $jgmenu_use_icons == false ] && icons=0 iconmargin=0 || icons=1 iconmargin=2
+
+mkconfigfile
+
+cat <<EOF > ${MENU_ITEMS}
+. ~/.config/mabox/settings.csv
+. ~/.config/mabox/settings_tags.csv
+
+EOF
+jgmenu --config-file=${CONFIG_FILE} --csv-file=${MENU_ITEMS} 2>/dev/null
+}
+
+#--------------------------------------------------------------------+
+#Color picker, usage: printf $BLD$CUR$RED$BBLU'Hello World!'$DEF     |
+#-------------------------+--------------------------------+---------+
+#       Text color        |       Background color         |         |
+#-----------+-------------+--------------+-----------------+         |
+# Base color|Lighter shade| Base color   | Lighter shade   |         |
+#-----------+-------------+--------------+-----------------+         |
+BLK='\e[30m'; blk='\e[90m'; BBLK='\e[40m'; bblk='\e[100m' #| Black   |
+RED='\e[31m'; red='\e[91m'; BRED='\e[41m'; bred='\e[101m' #| Red     |
+GRN='\e[32m'; grn='\e[92m'; BGRN='\e[42m'; bgrn='\e[102m' #| Green   |
+YLW='\e[33m'; ylw='\e[93m'; BYLW='\e[43m'; bylw='\e[103m' #| Yellow  |
+BLU='\e[34m'; blu='\e[94m'; BBLU='\e[44m'; bblu='\e[104m' #| Blue    |
+MGN='\e[35m'; mgn='\e[95m'; BMGN='\e[45m'; bmgn='\e[105m' #| Magenta |
+CYN='\e[36m'; cyn='\e[96m'; BCYN='\e[46m'; bcyn='\e[106m' #| Cyan    |
+WHT='\e[37m'; wht='\e[97m'; BWHT='\e[47m'; bwht='\e[107m' #| White   |
+#----------------------------------------------------------+---------+
+# Effects                                                            |
+#--------------------------------------------------------------------+
+DEF='\e[0m'   #Default color and effects                             |
+BLD='\e[1m'   #Bold\brighter                                         |
+DIM='\e[2m'   #Dim\darker                                            |
+CUR='\e[3m'   #Italic font                                           |
+UND='\e[4m'   #Underline                                             |
+INV='\e[7m'   #Inverted                                              |
+COF='\e[?25l' #Cursor Off                                            |
+CON='\e[?25h' #Cursor On                                             |
+#--------------------------------------------------------------------+
+
+case "$1" in
+	main)  main "$2";;
+	right) right;;
+	mblogout)  mblogout "$2";;
+	settings)  settings "$2";;
+	screenshot)  screenshot "$2";;
+	places) places;;
+	*)
+echo -e "
+${GRN}Kolekcja narzędzi dla Mabox-a stworzonych z pomocą Jgmenu
+
+	Użycie:
+${DEF}	$(basename "$0")${YLW} [${RED} OPCJA${YLW} ]
+
+${GRN}	Opcje:
+
+${YLW}	>${RED} main  ${YLW}            -${DEF} main menu - replaces OB menu
+${YLW}	>${RED} settings  ${YLW}        -${DEF} settings menu
+${YLW}	>${RED} right  ${YLW}           -${DEF} right panel
+${YLW}	>${RED} places ${YLW}           -${DEF} places - left sidepanel
+${YLW}	>${RED} mblogout ${YLW}         -${DEF} run logout script
+${YLW}	>${RED} screenshot ${YLW}       -${DEF} run screenshot script
+" >&2
+exit 1
+;;
+esac
+
+exit 0
