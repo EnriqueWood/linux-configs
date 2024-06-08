@@ -219,8 +219,8 @@ SEARCH_TEXT=""
 SEARCH_FIELD=""
 else
 MENU_PADDING_TOP=$((jgtools_padding + 38))
-SEARCH_TEXT="@text,,$((jgtools_padding + 10)),$((jgtools_padding + 4)),150,20,0,left,top,auto,#000000,<span size='large'></span>"
-SEARCH_FIELD="@search,,$((jgtools_padding + 38)),$((jgtools_padding + 4)),150,20,2,left,top,auto,#000000 0,<i>$TYPE_TO_SEARCH</i>"
+SEARCH_TEXT="@text,,$((jgtools_padding + 10)),$((jgtools_padding + 4)),355,20,0,left,top,auto,#000000,<span size='large'></span>"
+SEARCH_FIELD="@search,,$((jgtools_padding + 38)),$((jgtools_padding + 4)),355,20,2,left,top,auto,#000000,<i>$TYPE_TO_SEARCH</i>"
 fi
 
 #apps_in_submenu=true
